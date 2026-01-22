@@ -111,6 +111,7 @@ export async function GET() {
       playersProcessed: 0,
       errors: [] as string[],
       slates: [] as { id: number; name: string; startTime: string; players: number }[],
+      debug: [] as { draftGroupId: number; responseKeys: string[]; playerCount: number; samplePlayer?: Record<string, unknown> }[],
     };
 
     // 3. Process each draft group
@@ -128,17 +129,56 @@ export async function GET() {
         });
 
         if (!draftablesResponse.ok) {
+          const errorText = await draftablesResponse.text();
+          console.log(`[DK-SYNC] Draftables API error for group ${draftGroup.DraftGroupId}: ${draftablesResponse.status}`);
+          console.log(`[DK-SYNC] Error response body: ${errorText.slice(0, 500)}`);
           results.errors.push(
-            `Failed to fetch draftables for group ${draftGroup.DraftGroupId}: ${draftablesResponse.status}`
+            `Failed to fetch draftables for group ${draftGroup.DraftGroupId}: ${draftablesResponse.status} - ${errorText.slice(0, 200)}`
           );
           continue;
         }
 
-        const draftablesData: DKDraftablesResponse = await draftablesResponse.json();
-        const players = draftablesData.draftables || [];
+        // Debug: Get raw response text first
+        const rawText = await draftablesResponse.text();
+        console.log(`[DK-SYNC] Draftables raw response length: ${rawText.length} chars`);
+        console.log(`[DK-SYNC] Draftables raw response preview: ${rawText.slice(0, 500)}`);
+
+        let draftablesData: Record<string, unknown>;
+        try {
+          draftablesData = JSON.parse(rawText);
+        } catch (parseErr) {
+          console.error(`[DK-SYNC] Failed to parse draftables JSON for group ${draftGroup.DraftGroupId}:`, parseErr);
+          results.errors.push(`JSON parse error for group ${draftGroup.DraftGroupId}: ${rawText.slice(0, 100)}`);
+          continue;
+        }
+
+        // Debug: Log all top-level keys in the response
+        const responseKeys = Object.keys(draftablesData);
+        console.log(`[DK-SYNC] Draftables response keys: ${responseKeys.join(', ')}`);
+
+        // Add debug info to response
+        const debugEntry: { draftGroupId: number; responseKeys: string[]; playerCount: number; samplePlayer?: Record<string, unknown> } = {
+          draftGroupId: draftGroup.DraftGroupId,
+          responseKeys,
+          playerCount: 0,
+        };
+
+        // Try both 'draftables' and 'Draftables' (API might use PascalCase)
+        const players = (draftablesData.draftables || draftablesData.Draftables || []) as DKDraftable[];
+        console.log(`[DK-SYNC] Players array type: ${typeof players}, isArray: ${Array.isArray(players)}, length: ${Array.isArray(players) ? players.length : 'N/A'}`);
+
+        // Debug: Log first player object to see actual structure
+        if (Array.isArray(players) && players.length > 0) {
+          console.log(`[DK-SYNC] First player object sample:`, JSON.stringify(players[0], null, 2).slice(0, 1000));
+          debugEntry.samplePlayer = players[0] as Record<string, unknown>;
+        }
+        debugEntry.playerCount = Array.isArray(players) ? players.length : 0;
+        results.debug.push(debugEntry);
 
         if (players.length === 0) {
           console.log(`[DK-SYNC] No players found for draft group ${draftGroup.DraftGroupId}`);
+          // Log what keys ARE available in the response
+          console.log(`[DK-SYNC] Available response data:`, JSON.stringify(draftablesData, null, 2).slice(0, 1500));
           continue;
         }
 
@@ -171,16 +211,40 @@ export async function GET() {
         }
 
         // 5. Upsert player salaries
+        // Debug: Check player data structure - API might use different field names
+        const firstPlayer = players[0] as Record<string, unknown>;
+        const playerKeys = Object.keys(firstPlayer);
+        console.log(`[DK-SYNC] Player object keys: ${playerKeys.join(', ')}`);
+
+        // Handle both camelCase and other casing variants
+        const getPlayerField = (p: Record<string, unknown>, ...keys: string[]): unknown => {
+          for (const key of keys) {
+            if (p[key] !== undefined) return p[key];
+          }
+          return undefined;
+        };
+
         const salaryRecords = players
-          .filter((p) => !p.isDisabled && p.salary > 0)
-          .map((p) => ({
-            slate_id: slate.id,
-            dk_player_id: p.playerId,
-            name_id: p.displayName,
-            salary: p.salary,
-            roster_position: p.position,
-            team: p.teamAbbreviation,
-          }));
+          .filter((p) => {
+            const player = p as unknown as Record<string, unknown>;
+            const isDisabled = getPlayerField(player, 'isDisabled', 'IsDisabled', 'disabled', 'Disabled');
+            const salary = getPlayerField(player, 'salary', 'Salary');
+            return !isDisabled && Number(salary) > 0;
+          })
+          .map((p) => {
+            const player = p as unknown as Record<string, unknown>;
+            return {
+              slate_id: slate.id,
+              dk_player_id: getPlayerField(player, 'playerId', 'PlayerId', 'playerDkId', 'PlayerDkId') as number,
+              name_id: (getPlayerField(player, 'displayName', 'DisplayName', 'name', 'Name') ||
+                       `${getPlayerField(player, 'firstName', 'FirstName') || ''} ${getPlayerField(player, 'lastName', 'LastName') || ''}`.trim()) as string,
+              salary: Number(getPlayerField(player, 'salary', 'Salary')),
+              roster_position: getPlayerField(player, 'position', 'Position', 'rosterPosition', 'RosterPosition') as string,
+              team: getPlayerField(player, 'teamAbbreviation', 'TeamAbbreviation', 'team', 'Team') as string,
+            };
+          });
+
+        console.log(`[DK-SYNC] Filtered from ${players.length} to ${salaryRecords.length} salary records`);
 
         if (salaryRecords.length > 0) {
           // Delete old salaries for this slate first
@@ -211,9 +275,13 @@ export async function GET() {
 
     console.log(`[DK-SYNC] Completed. Processed ${results.slatesProcessed} slates, ${results.playersProcessed} players`);
 
+    // Limit debug output to first 3 entries to avoid huge response
+    const limitedDebug = results.debug.slice(0, 3);
+
     return NextResponse.json({
       success: true,
       ...results,
+      debug: limitedDebug,
     });
   } catch (err) {
     const error = err instanceof Error ? err.message : "Unknown error";
