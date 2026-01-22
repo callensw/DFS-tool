@@ -3,19 +3,78 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --background: #0f1117;
+  --foreground: #f3f4f6;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1f2937;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #4b5563;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* Table styles */
+.data-table {
+  @apply w-full text-sm;
+}
+
+.data-table th {
+  @apply px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider bg-gray-800/50 cursor-pointer hover:bg-gray-800 transition-colors;
+}
+
+.data-table td {
+  @apply px-4 py-3 text-gray-300 border-t border-gray-800;
+}
+
+.data-table tbody tr:hover {
+  @apply bg-gray-800/30;
+}
+
+/* Badge styles */
+.badge {
+  @apply px-2 py-0.5 rounded text-xs font-medium;
+}
+
+.badge-red {
+  @apply bg-red-500/20 text-red-400;
+}
+
+.badge-orange {
+  @apply bg-orange-500/20 text-orange-400;
+}
+
+.badge-yellow {
+  @apply bg-yellow-500/20 text-yellow-400;
+}
+
+.badge-green {
+  @apply bg-green-500/20 text-green-400;
+}
+
+.badge-blue {
+  @apply bg-blue-500/20 text-blue-400;
+}
+
+.badge-gray {
+  @apply bg-gray-500/20 text-gray-400;
 }
