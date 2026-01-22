@@ -167,7 +167,7 @@ export async function GET(request: Request) {
       "/v1/season_averages",
       {
         season,
-        "player_ids[]": batchIds.map(String),
+        player_ids: batchIds.map(String),
       }
     );
 
