@@ -36,25 +36,39 @@ interface Lineup {
 }
 
 // Check if a player can fill a roster slot
+// Handles BALLDONTLIE positions (G, F, C, G-F, F-C) and DK positions (PG, SG, SF, PF, C)
 function canFillSlot(position: string, slot: RosterSlot): boolean {
-  const pos = position.toUpperCase();
+  const pos = position.toUpperCase().trim();
+
+  // Normalize position - BALLDONTLIE uses G, F, C; we need to map to DK format
+  const isGuard = pos === "G" || pos.includes("PG") || pos.includes("SG") || pos.startsWith("G");
+  const isForward = pos === "F" || pos.includes("SF") || pos.includes("PF") || pos.startsWith("F");
+  const isCenter = pos === "C" || pos.includes("C");
 
   switch (slot) {
     case "PG":
-      return pos.includes("PG");
+      // PG slot: accepts PG, G, or any guard
+      return pos.includes("PG") || pos === "G" || (isGuard && !pos.includes("SG"));
     case "SG":
-      return pos.includes("SG");
+      // SG slot: accepts SG, G, or any guard
+      return pos.includes("SG") || pos === "G" || (isGuard && !pos.includes("PG"));
     case "SF":
-      return pos.includes("SF");
+      // SF slot: accepts SF, F, or any forward
+      return pos.includes("SF") || pos === "F" || (isForward && !pos.includes("PF"));
     case "PF":
-      return pos.includes("PF");
+      // PF slot: accepts PF, F, or any forward
+      return pos.includes("PF") || pos === "F" || (isForward && !pos.includes("SF"));
     case "C":
-      return pos === "C" || pos.includes("C");
+      // C slot: accepts C or any center
+      return isCenter;
     case "G":
-      return pos.includes("PG") || pos.includes("SG");
+      // G flex slot: accepts any guard
+      return isGuard;
     case "F":
-      return pos.includes("SF") || pos.includes("PF");
+      // F flex slot: accepts any forward
+      return isForward;
     case "UTIL":
+      // UTIL: accepts anyone
       return true;
     default:
       return false;
