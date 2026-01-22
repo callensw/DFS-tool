@@ -72,7 +72,7 @@ export async function GET(request: Request) {
 
   // Fetch stats from BALLDONTLIE
   const { data: stats, error: fetchError } = await fetchAllPages<ApiStats>(
-    "/v1/nba/stats",
+    "/v1/stats",
     params as Record<string, string>,
     100
   );

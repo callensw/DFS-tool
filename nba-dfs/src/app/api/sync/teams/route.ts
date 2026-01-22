@@ -14,7 +14,7 @@ export async function GET() {
   try {
     // Fetch teams from BALLDONTLIE API
     const result = await fetchFromBallDontLie<BallDontLieResponse<ApiTeam>>(
-      "/v1/nba/teams"
+      "/v1/teams"
     );
 
     if (result.error) {

@@ -10,7 +10,7 @@ export async function GET() {
   try {
     // Fetch all injuries with pagination
     const result = await fetchAllPages<ApiInjury>(
-      "/v1/nba/player_injuries",
+      "/v1/player_injuries",
       undefined,
       100
     );

@@ -10,7 +10,7 @@ export async function GET() {
   try {
     // Fetch all active players with pagination
     const result = await fetchAllPages<ApiPlayer>(
-      "/v1/nba/players/active",
+      "/v1/players/active",
       undefined,
       100
     );

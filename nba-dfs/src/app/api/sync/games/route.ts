@@ -21,7 +21,7 @@ export async function GET(request: Request) {
   try {
     // Fetch games from BALLDONTLIE API
     const result = await fetchFromBallDontLie<BallDontLieResponse<ApiGame>>(
-      "/v1/nba/games",
+      "/v1/games",
       { "dates[]": date }
     );
 
