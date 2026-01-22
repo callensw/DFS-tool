@@ -104,7 +104,7 @@ function generateLineup(
 
   // Fill slots in order of scarcity (specific positions first, then flex, then UTIL)
   const slotOrder: RosterSlot[] = ["PG", "SG", "SF", "PF", "C", "G", "F", "UTIL"];
-  const MIN_SALARY = 3500;
+  const MIN_SALARY = 3000;
 
   for (const slot of slotOrder) {
     if (filledSlots.has(slot)) continue;
@@ -323,11 +323,11 @@ export async function GET(request: Request) {
     const salaryData = salaryMap.get(player.id);
 
     // Use actual salary or estimate based on projection
-    // Formula: base $3,500 + $100 per projected point, capped at $12,000
-    // This gives range of ~$4,000 (5 pts) to $12,000 (85+ pts)
-    // Average lineup of 8 players at ~$5,500 = $44,000, fits under $50k cap
-    const estimatedSalary = Math.round(proj.dk_proj * 100 + 3500);
-    const salary = salaryData?.salary || Math.min(12000, Math.max(3500, estimatedSalary));
+    // Formula: base $3,000 + $80 per projected point, capped at $11,000
+    // This gives range of ~$3,400 (5 pts) to $11,000 (100 pts)
+    // Average lineup of 8 players at ~$5,000 = $40,000, fits under $50k cap
+    const estimatedSalary = Math.round(proj.dk_proj * 80 + 3000);
+    const salary = salaryData?.salary || Math.min(11000, Math.max(3000, estimatedSalary));
 
     // Skip players with very low projections
     if (proj.dk_proj < 5) continue;
