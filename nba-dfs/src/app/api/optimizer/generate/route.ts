@@ -104,9 +104,16 @@ function generateLineup(
 
   // Fill slots in order of scarcity (specific positions first, then flex, then UTIL)
   const slotOrder: RosterSlot[] = ["PG", "SG", "SF", "PF", "C", "G", "F", "UTIL"];
+  const MIN_SALARY = 3500;
 
   for (const slot of slotOrder) {
     if (filledSlots.has(slot)) continue;
+
+    // Calculate how many slots remain after this one
+    const slotsRemaining = ROSTER_SIZE - lineup.length - 1;
+    // Reserve minimum salary for remaining slots
+    const reservedSalary = slotsRemaining * MIN_SALARY;
+    const maxSalaryForThisSlot = remainingSalary - reservedSalary;
 
     // Find best available player for this slot
     let bestPlayer: (typeof playersWithVariance)[0] | null = null;
@@ -118,8 +125,8 @@ function generateLineup(
       // Skip if can't fill this slot
       if (!canFillSlot(player.position, slot)) continue;
 
-      // Skip if over salary
-      if (player.salary > remainingSalary) continue;
+      // Skip if over budget (accounting for reserved salary for remaining slots)
+      if (player.salary > maxSalaryForThisSlot) continue;
 
       // Skip if too many from same game
       const gameCount = gamePlayerCounts.get(player.gameId) || 0;
