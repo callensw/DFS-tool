@@ -74,6 +74,31 @@ export interface ApiOdds {
   }>;
 }
 
+export interface ApiStats {
+  id: number;
+  min: string;
+  fgm: number;
+  fga: number;
+  fg_pct: number;
+  fg3m: number;
+  fg3a: number;
+  fg3_pct: number;
+  ftm: number;
+  fta: number;
+  ft_pct: number;
+  oreb: number;
+  dreb: number;
+  reb: number;
+  ast: number;
+  stl: number;
+  blk: number;
+  turnover: number;
+  pf: number;
+  pts: number;
+  player: ApiPlayer;
+  game: ApiGame;
+}
+
 export async function fetchFromBallDontLie<T>(
   endpoint: string,
   params?: Record<string, string | string[]>
