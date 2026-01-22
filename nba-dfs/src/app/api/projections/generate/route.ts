@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-admin";
-import { getTodayDateString } from "@/lib/balldontlie";
+import { getTodayDateString, fetchFromBallDontLie } from "@/lib/balldontlie";
 
 export const dynamic = "force-dynamic";
 
-interface PlayerStats {
+interface SeasonAverage {
   player_id: number;
-  game_id: number;
+  season: number;
+  games_played: number;
+  min: string;
   pts: number;
   reb: number;
   ast: number;
@@ -14,29 +16,33 @@ interface PlayerStats {
   blk: number;
   turnover: number;
   fg3m: number;
-  dk_points: number;
-  minutes: string;
+}
+
+interface SeasonAveragesResponse {
+  data: SeasonAverage[];
 }
 
 /**
- * Calculate percentile value from sorted array
+ * Calculate DraftKings fantasy points from averages
  */
-function percentile(arr: number[], p: number): number {
-  if (arr.length === 0) return 0;
-  const sorted = [...arr].sort((a, b) => a - b);
-  const index = (p / 100) * (sorted.length - 1);
-  const lower = Math.floor(index);
-  const upper = Math.ceil(index);
-  if (lower === upper) return sorted[lower];
-  return sorted[lower] + (sorted[upper] - sorted[lower]) * (index - lower);
-}
-
-/**
- * Calculate average of array
- */
-function average(arr: number[]): number {
-  if (arr.length === 0) return 0;
-  return arr.reduce((sum, val) => sum + val, 0) / arr.length;
+function calculateDkPoints(stats: {
+  pts: number;
+  reb: number;
+  ast: number;
+  stl: number;
+  blk: number;
+  turnover: number;
+  fg3m: number;
+}): number {
+  return (
+    stats.pts * 1 +
+    stats.reb * 1.25 +
+    stats.ast * 1.5 +
+    stats.stl * 2 +
+    stats.blk * 2 +
+    stats.turnover * -0.5 +
+    stats.fg3m * 0.5
+  );
 }
 
 /**
@@ -56,6 +62,7 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const targetDate = searchParams.get("date") || getTodayDateString();
+  const season = searchParams.get("season") || "2024";
 
   const supabase = createAdminClient();
 
@@ -93,23 +100,26 @@ export async function GET(request: Request) {
     teamIds.add(game.visitor_team_id);
   });
 
-  // 3. Get players from those teams
-  const { data: players, error: playersError } = await supabase
-    .from("players")
-    .select("id, team_id, first_name, last_name")
-    .in("team_id", Array.from(teamIds))
-    .eq("is_active", true);
+  // 3. Get players from those teams directly from API
+  // Fetch all players and filter by team - this works with GOAT tier
+  const playersResult = await fetchFromBallDontLie<{ data: Array<{ id: number; first_name: string; last_name: string; position: string; team: { id: number } }> }>(
+    "/v1/players/active"
+  );
 
-  if (playersError) {
-    console.error("[PROJECTIONS] Error fetching players:", playersError);
+  if (playersResult.error) {
+    console.error("[PROJECTIONS] Error fetching players:", playersResult.error);
     return NextResponse.json({
       success: false,
       count: 0,
-      error: playersError.message,
+      error: playersResult.error,
     });
   }
 
-  if (!players || players.length === 0) {
+  // Filter to players on today's teams
+  const allPlayers = playersResult.data?.data || [];
+  const players = allPlayers.filter(p => teamIds.has(p.team?.id));
+
+  if (players.length === 0) {
     console.log("[PROJECTIONS] No players found for teams in today's games");
     return NextResponse.json({
       success: true,
@@ -125,42 +135,42 @@ export async function GET(request: Request) {
   const playerGameMap = new Map<number, number>();
   players.forEach((player) => {
     const game = games.find(
-      (g) => g.home_team_id === player.team_id || g.visitor_team_id === player.team_id
+      (g) => g.home_team_id === player.team?.id || g.visitor_team_id === player.team?.id
     );
     if (game) {
       playerGameMap.set(player.id, game.id);
     }
   });
 
-  // 4. Get last 10 games of stats for each player
+  // 4. Fetch season averages from API for these players (batch in groups of 25)
   const playerIds = players.map((p) => p.id);
+  const seasonAveragesMap = new Map<number, SeasonAverage>();
 
-  const { data: allStats, error: statsError } = await supabase
-    .from("player_game_stats")
-    .select("*")
-    .in("player_id", playerIds)
-    .order("game_id", { ascending: false });
+  // Process in batches to avoid URL length limits
+  const batchSize = 25;
+  for (let i = 0; i < playerIds.length; i += batchSize) {
+    const batchIds = playerIds.slice(i, i + batchSize);
 
-  if (statsError) {
-    console.error("[PROJECTIONS] Error fetching stats:", statsError);
-    return NextResponse.json({
-      success: false,
-      count: 0,
-      error: statsError.message,
-    });
+    const result = await fetchFromBallDontLie<SeasonAveragesResponse>(
+      "/v1/season_averages",
+      {
+        season,
+        "player_ids[]": batchIds.map(String),
+      }
+    );
+
+    if (result.data?.data) {
+      result.data.data.forEach((avg) => {
+        seasonAveragesMap.set(avg.player_id, avg);
+      });
+    }
+
+    console.log(`[PROJECTIONS] Fetched season averages batch ${Math.floor(i / batchSize) + 1}, got ${result.data?.data?.length || 0} averages`);
   }
 
-  // Group stats by player and take last 10
-  const statsByPlayer = new Map<number, PlayerStats[]>();
-  (allStats || []).forEach((stat) => {
-    const existing = statsByPlayer.get(stat.player_id) || [];
-    if (existing.length < 10) {
-      existing.push(stat as PlayerStats);
-      statsByPlayer.set(stat.player_id, existing);
-    }
-  });
+  console.log(`[PROJECTIONS] Total season averages: ${seasonAveragesMap.size}`);
 
-  // 5. Generate projections for each player
+  // 5. Generate projections for each player using season averages
   const projections: Array<{
     player_id: number;
     game_id: number;
@@ -178,26 +188,30 @@ export async function GET(request: Request) {
     const gameId = playerGameMap.get(player.id);
     if (!gameId) continue;
 
-    const stats = statsByPlayer.get(player.id) || [];
+    const seasonAvg = seasonAveragesMap.get(player.id);
 
-    if (stats.length === 0) {
+    if (!seasonAvg || seasonAvg.games_played < 3) {
       playersWithoutStats++;
-      // Player has no stats - skip or use league average
-      // For now, we skip players without history
       continue;
     }
 
     playersWithStats++;
 
-    // Extract dk_points array
-    const dkPoints = stats.map((s) => s.dk_points || 0);
-    const minutes = stats.map((s) => parseMinutes(s.minutes));
+    // Calculate DK projection from season averages
+    const dk_proj = Math.round(calculateDkPoints({
+      pts: seasonAvg.pts,
+      reb: seasonAvg.reb,
+      ast: seasonAvg.ast,
+      stl: seasonAvg.stl,
+      blk: seasonAvg.blk,
+      turnover: seasonAvg.turnover,
+      fg3m: seasonAvg.fg3m,
+    }) * 100) / 100;
 
-    // Calculate projections
-    const dk_proj = Math.round(average(dkPoints) * 100) / 100;
-    const dk_floor = Math.round(percentile(dkPoints, 10) * 100) / 100;
-    const dk_ceiling = Math.round(percentile(dkPoints, 90) * 100) / 100;
-    const minutes_proj = Math.round(average(minutes) * 10) / 10;
+    // Estimate floor (80% of average) and ceiling (130% of average)
+    const dk_floor = Math.round(dk_proj * 0.8 * 100) / 100;
+    const dk_ceiling = Math.round(dk_proj * 1.3 * 100) / 100;
+    const minutes_proj = Math.round(parseMinutes(seasonAvg.min) * 10) / 10;
 
     projections.push({
       player_id: player.id,
@@ -206,12 +220,12 @@ export async function GET(request: Request) {
       dk_proj,
       dk_floor,
       dk_ceiling,
-      ownership_proj: null, // Will be set later with more advanced logic
+      ownership_proj: null,
     });
   }
 
   if (projections.length === 0) {
-    console.log("[PROJECTIONS] No projections generated (no player stats found)");
+    console.log("[PROJECTIONS] No projections generated (no season averages found)");
     return NextResponse.json({
       success: true,
       count: 0,
@@ -219,7 +233,7 @@ export async function GET(request: Request) {
       players_checked: players.length,
       players_with_stats: playersWithStats,
       players_without_stats: playersWithoutStats,
-      message: "No projections generated - players have no historical stats",
+      message: "No projections generated - players have no season averages",
     });
   }
 
@@ -243,7 +257,7 @@ export async function GET(request: Request) {
   console.log(`[PROJECTIONS] Generated ${projections.length} projections`);
 
   // Calculate some summary stats
-  const avgProjection = average(projections.map((p) => p.dk_proj));
+  const avgProjection = projections.reduce((sum, p) => sum + p.dk_proj, 0) / projections.length;
   const topProjections = projections
     .sort((a, b) => b.dk_proj - a.dk_proj)
     .slice(0, 5)
@@ -261,6 +275,7 @@ export async function GET(request: Request) {
     success: true,
     count: projections.length,
     date: targetDate,
+    season,
     games_count: games.length,
     players_checked: players.length,
     players_with_stats: playersWithStats,
