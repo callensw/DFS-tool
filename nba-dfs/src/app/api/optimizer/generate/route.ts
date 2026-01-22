@@ -36,37 +36,31 @@ interface Lineup {
 }
 
 // Check if a player can fill a roster slot
-// Handles BALLDONTLIE positions (G, F, C, G-F, F-C) and DK positions (PG, SG, SF, PF, C)
+// BALLDONTLIE positions: G, F, C, G-F, F-G, C-F, F-C
+// DraftKings slots: PG, SG, SF, PF, C, G, F, UTIL
 function canFillSlot(position: string, slot: RosterSlot): boolean {
   const pos = position.toUpperCase().trim();
 
-  // Normalize position - BALLDONTLIE uses G, F, C; we need to map to DK format
-  const isGuard = pos === "G" || pos.includes("PG") || pos.includes("SG") || pos.startsWith("G");
-  const isForward = pos === "F" || pos.includes("SF") || pos.includes("PF") || pos.startsWith("F");
-  const isCenter = pos === "C" || pos.includes("C");
+  // Check if position contains guard/forward/center capability
+  // A position like "G-F" means can play both guard AND forward
+  const hasGuard = pos.includes("G") || pos.includes("PG") || pos.includes("SG");
+  const hasForward = pos.includes("F") || pos.includes("SF") || pos.includes("PF");
+  const hasCenter = pos === "C" || pos.includes("C-") || pos.includes("-C");
 
   switch (slot) {
     case "PG":
-      // PG slot: accepts PG, G, or any guard
-      return pos.includes("PG") || pos === "G" || (isGuard && !pos.includes("SG"));
     case "SG":
-      // SG slot: accepts SG, G, or any guard
-      return pos.includes("SG") || pos === "G" || (isGuard && !pos.includes("PG"));
-    case "SF":
-      // SF slot: accepts SF, F, or any forward
-      return pos.includes("SF") || pos === "F" || (isForward && !pos.includes("PF"));
-    case "PF":
-      // PF slot: accepts PF, F, or any forward
-      return pos.includes("PF") || pos === "F" || (isForward && !pos.includes("SF"));
-    case "C":
-      // C slot: accepts C or any center
-      return isCenter;
     case "G":
-      // G flex slot: accepts any guard
-      return isGuard;
+      // Any guard slot: accepts anyone with guard capability
+      return hasGuard;
+    case "SF":
+    case "PF":
     case "F":
-      // F flex slot: accepts any forward
-      return isForward;
+      // Any forward slot: accepts anyone with forward capability
+      return hasForward;
+    case "C":
+      // Center slot: accepts centers
+      return hasCenter;
     case "UTIL":
       // UTIL: accepts anyone
       return true;
