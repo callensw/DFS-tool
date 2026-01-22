@@ -316,8 +316,10 @@ export async function GET(request: Request) {
     const salaryData = salaryMap.get(player.id);
 
     // Use actual salary or estimate based on projection
-    // Cap between $3,500 and $12,000 like real DraftKings
-    const estimatedSalary = Math.round(proj.dk_proj * 200 + 3500);
+    // Formula: base $3,500 + $100 per projected point, capped at $12,000
+    // This gives range of ~$4,000 (5 pts) to $12,000 (85+ pts)
+    // Average lineup of 8 players at ~$5,500 = $44,000, fits under $50k cap
+    const estimatedSalary = Math.round(proj.dk_proj * 100 + 3500);
     const salary = salaryData?.salary || Math.min(12000, Math.max(3500, estimatedSalary));
 
     // Skip players with very low projections
