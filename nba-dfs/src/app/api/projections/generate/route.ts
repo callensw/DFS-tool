@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-admin";
-import { getTodayDateString, fetchFromBallDontLie } from "@/lib/balldontlie";
+import { getTodayDateString, fetchAllPages, fetchFromBallDontLie } from "@/lib/balldontlie";
 
 export const dynamic = "force-dynamic";
 
@@ -62,7 +62,7 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const targetDate = searchParams.get("date") || getTodayDateString();
-  const season = searchParams.get("season") || "2024";
+  const season = searchParams.get("season") || "2025";
 
   const supabase = createAdminClient();
 
@@ -100,10 +100,19 @@ export async function GET(request: Request) {
     teamIds.add(game.visitor_team_id);
   });
 
-  // 3. Get players from those teams directly from API
-  // Fetch all players and filter by team - this works with GOAT tier
-  const playersResult = await fetchFromBallDontLie<{ data: Array<{ id: number; first_name: string; last_name: string; position: string; team: { id: number } }> }>(
-    "/v1/players/active"
+  // 3. Get players from those teams directly from API (with pagination)
+  interface ApiPlayer {
+    id: number;
+    first_name: string;
+    last_name: string;
+    position: string;
+    team: { id: number };
+  }
+
+  const playersResult = await fetchAllPages<ApiPlayer>(
+    "/v1/players/active",
+    undefined,
+    100
   );
 
   if (playersResult.error) {
@@ -116,7 +125,8 @@ export async function GET(request: Request) {
   }
 
   // Filter to players on today's teams
-  const allPlayers = playersResult.data?.data || [];
+  const allPlayers = playersResult.data || [];
+  console.log(`[PROJECTIONS] Fetched ${allPlayers.length} total active players`);
   const players = allPlayers.filter(p => teamIds.has(p.team?.id));
 
   if (players.length === 0) {
