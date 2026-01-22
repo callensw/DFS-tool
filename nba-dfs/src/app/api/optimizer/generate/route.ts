@@ -316,7 +316,9 @@ export async function GET(request: Request) {
     const salaryData = salaryMap.get(player.id);
 
     // Use actual salary or estimate based on projection
-    const salary = salaryData?.salary || Math.round(proj.dk_proj * 200 + 3500);
+    // Cap between $3,500 and $12,000 like real DraftKings
+    const estimatedSalary = Math.round(proj.dk_proj * 200 + 3500);
+    const salary = salaryData?.salary || Math.min(12000, Math.max(3500, estimatedSalary));
 
     // Skip players with very low projections
     if (proj.dk_proj < 5) continue;
