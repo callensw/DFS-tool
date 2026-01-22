@@ -157,7 +157,7 @@ function generateLineup(
   }
 
   // Try to upgrade players with remaining salary
-  lineup.sort((a, b) => a.adjustedValue - b.adjustedValue);
+  lineup.sort((a, b) => a.value - b.value);
 
   for (let i = 0; i < lineup.length && remainingSalary > 0; i++) {
     const currentPlayer = lineup[i];
@@ -178,7 +178,7 @@ function generateLineup(
         continue;
 
       // Only upgrade if significantly better
-      if (player.adjustedProjection > currentPlayer.adjustedProjection * 1.1) {
+      if (player.projection > currentPlayer.projection * 1.1) {
         // Swap players
         remainingSalary += currentPlayer.salary - player.salary;
         usedPlayerIds.delete(currentPlayer.id);
