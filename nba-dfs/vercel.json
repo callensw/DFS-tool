@@ -25,6 +25,10 @@
     {
       "path": "/api/salaries/generate",
       "schedule": "5 */2 * * *"
+    },
+    {
+      "path": "/api/sync/dk-salaries",
+      "schedule": "0 10,14,17,19 * * *"
     }
   ]
 }

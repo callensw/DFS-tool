@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-admin";
-import { getTodayDateString } from "@/lib/balldontlie";
 
 export const dynamic = "force-dynamic";
 
 const SALARY_CAP = 50000;
 const ROSTER_SIZE = 8;
-const MAX_PLAYERS_PER_GAME = 4;
+const MAX_PLAYERS_PER_TEAM = 4;
 
 // DraftKings roster positions
 const ROSTER_SLOTS = ["PG", "SG", "SF", "PF", "C", "G", "F", "UTIL"] as const;
@@ -14,15 +13,13 @@ type RosterSlot = (typeof ROSTER_SLOTS)[number];
 
 interface PlayerPool {
   id: number;
+  dkPlayerId: number;
   name: string;
   position: string;
   team: string;
   salary: number;
   projection: number;
-  floor: number;
-  ceiling: number;
-  gameId: number;
-  value: number; // projection / salary * 1000
+  value: number;
 }
 
 interface LineupPlayer extends PlayerPool {
@@ -35,110 +32,87 @@ interface Lineup {
   totalProjection: number;
 }
 
-// Check if a player can fill a roster slot
-// BALLDONTLIE positions: G, F, C, G-F, F-G, C-F, F-C
-// DraftKings slots: PG, SG, SF, PF, C, G, F, UTIL
+/**
+ * Check if a player can fill a roster slot based on DK position eligibility.
+ * DK positions can be: PG, SG, SF, PF, C, PG/SG, SF/PF, etc.
+ */
 function canFillSlot(position: string, slot: RosterSlot): boolean {
   const pos = position.toUpperCase().trim();
-
-  // Check if position contains guard/forward/center capability
-  // A position like "G-F" means can play both guard AND forward
-  const hasGuard = pos.includes("G") || pos.includes("PG") || pos.includes("SG");
-  const hasForward = pos.includes("F") || pos.includes("SF") || pos.includes("PF");
-  const hasCenter = pos === "C" || pos.includes("C-") || pos.includes("-C");
+  const positions = pos.split("/");
 
   switch (slot) {
     case "PG":
+      return positions.includes("PG");
     case "SG":
-    case "G":
-      // Any guard slot: accepts anyone with guard capability
-      return hasGuard;
+      return positions.includes("SG");
     case "SF":
+      return positions.includes("SF");
     case "PF":
-    case "F":
-      // Any forward slot: accepts anyone with forward capability
-      return hasForward;
+      return positions.includes("PF");
     case "C":
-      // Center slot: accepts centers
-      return hasCenter;
+      return positions.includes("C");
+    case "G":
+      return positions.includes("PG") || positions.includes("SG");
+    case "F":
+      return positions.includes("SF") || positions.includes("PF");
     case "UTIL":
-      // UTIL: accepts anyone
       return true;
     default:
       return false;
   }
 }
 
-// Add random variance to projections for lineup diversity
-function addVariance(projection: number, variance: number): number {
+function addVariance(value: number, variance: number): number {
   const multiplier = 1 + (Math.random() - 0.5) * 2 * variance;
-  return projection * multiplier;
+  return value * multiplier;
 }
 
-// Track why lineups fail for debugging
 let lastFailureReason = "";
 
-// Generate a single lineup using greedy algorithm
 function generateLineup(
   playerPool: PlayerPool[],
   variance: number = 0.15,
   existingLineups: Lineup[] = []
 ): Lineup | null {
-  // Add variance to projections for diversity
   const playersWithVariance = playerPool.map((p) => ({
     ...p,
-    adjustedProjection: addVariance(p.projection, variance),
     adjustedValue: addVariance(p.value, variance),
   }));
 
-  // Sort by adjusted value
   playersWithVariance.sort((a, b) => b.adjustedValue - a.adjustedValue);
 
   const lineup: LineupPlayer[] = [];
   const usedPlayerIds = new Set<number>();
-  const gamePlayerCounts = new Map<number, number>();
+  const teamPlayerCounts = new Map<string, number>();
   let remainingSalary = SALARY_CAP;
-
-  // Track which slots are filled
   const filledSlots = new Set<RosterSlot>();
 
-  // Fill slots in order of scarcity (specific positions first, then flex, then UTIL)
   const slotOrder: RosterSlot[] = ["PG", "SG", "SF", "PF", "C", "G", "F", "UTIL"];
   const MIN_SALARY = 3500;
 
   for (const slot of slotOrder) {
     if (filledSlots.has(slot)) continue;
 
-    // Calculate how many slots remain after this one
     const slotsRemaining = ROSTER_SIZE - lineup.length - 1;
-    // Reserve minimum salary for remaining slots
     const reservedSalary = slotsRemaining * MIN_SALARY;
     const maxSalaryForThisSlot = remainingSalary - reservedSalary;
 
-    // Find best available player for this slot
     let bestPlayer: (typeof playersWithVariance)[0] | null = null;
 
     for (const player of playersWithVariance) {
-      // Skip if already used
-      if (usedPlayerIds.has(player.id)) continue;
-
-      // Skip if can't fill this slot
+      if (usedPlayerIds.has(player.dkPlayerId)) continue;
       if (!canFillSlot(player.position, slot)) continue;
-
-      // Skip if over budget (accounting for reserved salary for remaining slots)
       if (player.salary > maxSalaryForThisSlot) continue;
 
-      // Skip if too many from same game
-      const gameCount = gamePlayerCounts.get(player.gameId) || 0;
-      if (gameCount >= MAX_PLAYERS_PER_GAME) continue;
+      const teamCount = teamPlayerCounts.get(player.team) || 0;
+      if (teamCount >= MAX_PLAYERS_PER_TEAM) continue;
 
-      // Check if lineup would be too similar to existing lineups
       if (existingLineups.length > 0 && slot === "UTIL") {
-        const playerIds = [...lineup.map((p) => p.id), player.id];
+        const playerIds = [...lineup.map((p) => p.dkPlayerId), player.dkPlayerId];
         const isTooSimilar = existingLineups.some((existing) => {
-          const existingIds = new Set(existing.players.map((p) => p.id));
+          const existingIds = new Set(existing.players.map((p) => p.dkPlayerId));
           const overlap = playerIds.filter((id) => existingIds.has(id)).length;
-          return overlap >= 7; // At least 7 same players
+          return overlap >= 7;
         });
         if (isTooSimilar) continue;
       }
@@ -148,73 +122,19 @@ function generateLineup(
     }
 
     if (!bestPlayer) {
-      // ALL slots must be filled - if we can't fill any slot, lineup fails
       lastFailureReason = `Could not fill ${slot} slot. Remaining salary: $${remainingSalary}. Lineup size: ${lineup.length}`;
       return null;
     }
 
-    // Add player to lineup
-    lineup.push({
-      ...bestPlayer,
-      rosterSlot: slot,
-    });
-
-    usedPlayerIds.add(bestPlayer.id);
+    lineup.push({ ...bestPlayer, rosterSlot: slot });
+    usedPlayerIds.add(bestPlayer.dkPlayerId);
     remainingSalary -= bestPlayer.salary;
-    gamePlayerCounts.set(
-      bestPlayer.gameId,
-      (gamePlayerCounts.get(bestPlayer.gameId) || 0) + 1
-    );
+    teamPlayerCounts.set(bestPlayer.team, (teamPlayerCounts.get(bestPlayer.team) || 0) + 1);
     filledSlots.add(slot);
   }
 
-  // Verify we have a complete lineup
   if (lineup.length !== ROSTER_SIZE) {
     return null;
-  }
-
-  // Try to upgrade players with remaining salary
-  lineup.sort((a, b) => a.value - b.value);
-
-  for (let i = 0; i < lineup.length && remainingSalary > 0; i++) {
-    const currentPlayer = lineup[i];
-    const maxUpgradeSalary = currentPlayer.salary + remainingSalary;
-
-    // Find better player for this slot
-    for (const player of playersWithVariance) {
-      if (usedPlayerIds.has(player.id)) continue;
-      if (!canFillSlot(player.position, currentPlayer.rosterSlot)) continue;
-      if (player.salary > maxUpgradeSalary) continue;
-
-      const gameCount = gamePlayerCounts.get(player.gameId) || 0;
-      const currentGameCount = gamePlayerCounts.get(currentPlayer.gameId) || 0;
-      if (
-        player.gameId !== currentPlayer.gameId &&
-        gameCount >= MAX_PLAYERS_PER_GAME
-      )
-        continue;
-
-      // Only upgrade if significantly better
-      if (player.projection > currentPlayer.projection * 1.1) {
-        // Swap players
-        remainingSalary += currentPlayer.salary - player.salary;
-        usedPlayerIds.delete(currentPlayer.id);
-        usedPlayerIds.add(player.id);
-
-        // Update game counts
-        gamePlayerCounts.set(currentPlayer.gameId, currentGameCount - 1);
-        gamePlayerCounts.set(
-          player.gameId,
-          (gamePlayerCounts.get(player.gameId) || 0) + 1
-        );
-
-        lineup[i] = {
-          ...player,
-          rosterSlot: currentPlayer.rosterSlot,
-        };
-        break;
-      }
-    }
   }
 
   const totalSalary = lineup.reduce((sum, p) => sum + p.salary, 0);
@@ -231,149 +151,87 @@ export async function GET(request: Request) {
   console.log("[OPTIMIZER] Starting lineup generation...");
 
   const { searchParams } = new URL(request.url);
-  const targetDate = searchParams.get("date") || getTodayDateString();
-  const lineupCount = Math.min(
-    parseInt(searchParams.get("count") || "20"),
-    150
-  );
+  const slateId = searchParams.get("slateId");
+  const lineupCount = Math.min(parseInt(searchParams.get("count") || "20"), 150);
+
+  if (!slateId) {
+    return NextResponse.json({
+      success: false,
+      error: "slateId is required. Get available slates from /api/slates",
+      lineups: [],
+    });
+  }
 
   const supabase = createAdminClient();
 
-  // 1. Get games for the target date
-  const { data: games, error: gamesError } = await supabase
-    .from("games")
-    .select("id, home_team_id, visitor_team_id")
-    .eq("date", targetDate);
-
-  if (gamesError) {
-    console.error("[OPTIMIZER] Error fetching games:", gamesError);
-    return NextResponse.json({
-      success: false,
-      error: gamesError.message,
-      lineups: [],
-    });
-  }
-
-  if (!games || games.length === 0) {
-    return NextResponse.json({
-      success: false,
-      error: "No games found for this date",
-      lineups: [],
-      date: targetDate,
-    });
-  }
-
-  const gameIds = games.map((g) => g.id);
-  console.log(`[OPTIMIZER] Found ${games.length} games for ${targetDate}`);
-
-  // 2. Get projections for games
-  const { data: projections, error: projError } = await supabase
-    .from("projections")
+  // 1. Get slate info
+  const { data: slate, error: slateError } = await supabase
+    .from("dk_slates")
     .select("*")
-    .in("game_id", gameIds);
+    .eq("id", slateId)
+    .single();
 
-  if (projError || !projections || projections.length === 0) {
+  if (slateError || !slate) {
     return NextResponse.json({
       success: false,
-      error: "No projections found for this date",
-      lineups: [],
-      date: targetDate,
-    });
-  }
-
-  console.log(`[OPTIMIZER] Found ${projections.length} projections`);
-
-  // 3. Get player info
-  const playerIds = projections.map((p) => p.player_id);
-  const { data: players, error: playersError } = await supabase
-    .from("players")
-    .select("*")
-    .in("id", playerIds);
-
-  if (playersError || !players) {
-    return NextResponse.json({
-      success: false,
-      error: "Error fetching player data",
+      error: `Slate ${slateId} not found`,
       lineups: [],
     });
   }
 
-  // 4. Get salaries from dk_salaries table (generated by /api/salaries/generate)
-  const { data: salaries } = await supabase
+  console.log(`[OPTIMIZER] Using slate: ${slate.name} (${slate.game_count} games)`);
+
+  // 2. Get DK salaries for this slate
+  const { data: salaries, error: salariesError } = await supabase
     .from("dk_salaries")
     .select("*")
-    .in("game_id", gameIds);
+    .eq("slate_id", slateId);
 
-  // 5. Get teams
-  const { data: teams } = await supabase.from("teams").select("*");
-
-  // Build lookup maps
-  const playerMap = new Map(players.map((p) => [p.id, p]));
-  // Key salaries by player_id for quick lookup
-  const salaryMap = new Map((salaries || []).map((s) => [s.player_id, s]));
-  const teamMap = new Map((teams || []).map((t) => [t.id, t]));
-
-  // Check if we have salaries
-  if (!salaries || salaries.length === 0) {
+  if (salariesError || !salaries || salaries.length === 0) {
     return NextResponse.json({
       success: false,
-      error: "No salaries found. Run /api/salaries/generate first to generate salaries.",
+      error: "No players found for this slate. Try syncing DK salaries first.",
       lineups: [],
     });
   }
 
-  console.log(`[OPTIMIZER] Found ${salaries.length} salaries`);
+  console.log(`[OPTIMIZER] Found ${salaries.length} players on slate`);
 
-  // 6. Build player pool
-  const playerPool: PlayerPool[] = [];
-  let playersWithoutSalary = 0;
+  // 3. Build player pool using DK data directly
+  // For projections, we'll use a simple formula based on salary (can be enhanced later)
+  const playerPool: PlayerPool[] = salaries
+    .filter((s) => s.salary >= 3500) // Filter out minimum salary players
+    .map((s, index) => {
+      // Simple projection estimate: higher salary = higher projection
+      // This can be replaced with actual projections from another source
+      const baseProjection = (s.salary - 3500) / 150 + 10;
+      const projection = Math.round(baseProjection * 100) / 100;
+      const value = projection > 0 ? (projection / s.salary) * 1000 : 0;
 
-  for (const proj of projections) {
-    const player = playerMap.get(proj.player_id);
-    if (!player) continue;
-
-    const team = teamMap.get(player.team_id);
-    const salaryData = salaryMap.get(player.id);
-
-    // Skip players without salary data
-    if (!salaryData) {
-      playersWithoutSalary++;
-      continue;
-    }
-
-    const salary = salaryData.salary;
-
-    // Skip players with very low projections
-    if (proj.dk_proj < 5) continue;
-
-    const value = salary > 0 ? (proj.dk_proj / salary) * 1000 : 0;
-
-    playerPool.push({
-      id: player.id,
-      name: `${player.first_name} ${player.last_name}`,
-      position: player.position || "UTIL",
-      team: team?.abbreviation || "N/A",
-      salary,
-      projection: proj.dk_proj,
-      floor: proj.dk_floor,
-      ceiling: proj.dk_ceiling,
-      gameId: proj.game_id,
-      value: Math.round(value * 100) / 100,
+      return {
+        id: index,
+        dkPlayerId: s.dk_player_id,
+        name: s.name_id || `Player ${s.dk_player_id}`,
+        position: s.roster_position || "UTIL",
+        team: s.team || "N/A",
+        salary: s.salary,
+        projection,
+        value: Math.round(value * 100) / 100,
+      };
     });
-  }
 
   console.log(`[OPTIMIZER] Player pool size: ${playerPool.length}`);
 
-  // Count players by position capability
+  // Count positions
   const positionCounts = {
-    guards: playerPool.filter((p) => canFillSlot(p.position, "G")).length,
-    forwards: playerPool.filter((p) => canFillSlot(p.position, "F")).length,
-    centers: playerPool.filter((p) => canFillSlot(p.position, "C")).length,
-    rawPositions: {} as Record<string, number>,
+    PG: playerPool.filter((p) => canFillSlot(p.position, "PG")).length,
+    SG: playerPool.filter((p) => canFillSlot(p.position, "SG")).length,
+    SF: playerPool.filter((p) => canFillSlot(p.position, "SF")).length,
+    PF: playerPool.filter((p) => canFillSlot(p.position, "PF")).length,
+    C: playerPool.filter((p) => canFillSlot(p.position, "C")).length,
+    G: playerPool.filter((p) => canFillSlot(p.position, "G")).length,
+    F: playerPool.filter((p) => canFillSlot(p.position, "F")).length,
   };
-  playerPool.forEach((p) => {
-    positionCounts.rawPositions[p.position] = (positionCounts.rawPositions[p.position] || 0) + 1;
-  });
 
   if (playerPool.length < ROSTER_SIZE) {
     return NextResponse.json({
@@ -384,50 +242,20 @@ export async function GET(request: Request) {
     });
   }
 
-  // Check if we have enough for each position
-  if (positionCounts.guards < 3) {
-    return NextResponse.json({
-      success: false,
-      error: `Not enough guards (need 3, have ${positionCounts.guards})`,
-      lineups: [],
-      debug: { playerPoolSize: playerPool.length, positionCounts },
-    });
-  }
-  if (positionCounts.forwards < 3) {
-    return NextResponse.json({
-      success: false,
-      error: `Not enough forwards (need 3, have ${positionCounts.forwards})`,
-      lineups: [],
-      debug: { playerPoolSize: playerPool.length, positionCounts },
-    });
-  }
-  if (positionCounts.centers < 1) {
-    return NextResponse.json({
-      success: false,
-      error: `Not enough centers (need 1, have ${positionCounts.centers})`,
-      lineups: [],
-      debug: { playerPoolSize: playerPool.length, positionCounts },
-    });
-  }
-
-  // 7. Generate lineups
+  // 4. Generate lineups
   const generatedLineups: Lineup[] = [];
   let attempts = 0;
   const maxAttempts = lineupCount * 10;
 
   while (generatedLineups.length < lineupCount && attempts < maxAttempts) {
     attempts++;
-
-    // Increase variance as we generate more lineups
     const variance = 0.1 + (generatedLineups.length / lineupCount) * 0.2;
-
     const lineup = generateLineup(playerPool, variance, generatedLineups);
 
     if (lineup) {
-      // Check for duplicates
       const isDuplicate = generatedLineups.some((existing) => {
-        const existingIds = new Set(existing.players.map((p) => p.id));
-        const newIds = lineup.players.map((p) => p.id);
+        const existingIds = new Set(existing.players.map((p) => p.dkPlayerId));
+        const newIds = lineup.players.map((p) => p.dkPlayerId);
         const overlap = newIds.filter((id) => existingIds.has(id)).length;
         return overlap === ROSTER_SIZE;
       });
@@ -438,56 +266,24 @@ export async function GET(request: Request) {
     }
   }
 
-  console.log(
-    `[OPTIMIZER] Generated ${generatedLineups.length} lineups in ${attempts} attempts`
-  );
+  console.log(`[OPTIMIZER] Generated ${generatedLineups.length} lineups in ${attempts} attempts`);
 
-  // Sort lineups by projected points
   generatedLineups.sort((a, b) => b.totalProjection - a.totalProjection);
-
-  // 8. Save lineups to database
-  const lineupsToSave = generatedLineups.map((lineup) => ({
-    game_date: targetDate,
-    total_salary: lineup.totalSalary,
-    projected_points: lineup.totalProjection,
-    players: lineup.players.map((p) => ({
-      id: p.id,
-      name: p.name,
-      position: p.position,
-      team: p.team,
-      salary: p.salary,
-      projection: p.projection,
-      rosterSlot: p.rosterSlot,
-    })),
-  }));
-
-  if (lineupsToSave.length > 0) {
-    const { error: saveError } = await supabase
-      .from("lineups")
-      .insert(lineupsToSave);
-
-    if (saveError) {
-      console.error("[OPTIMIZER] Error saving lineups:", saveError);
-    } else {
-      console.log(`[OPTIMIZER] Saved ${lineupsToSave.length} lineups`);
-    }
-  }
 
   return NextResponse.json({
     success: true,
-    date: targetDate,
+    slate: {
+      id: slate.id,
+      name: slate.name,
+      gameCount: slate.game_count,
+      startTime: slate.start_time,
+    },
     count: generatedLineups.length,
     debug: {
       playerPoolSize: playerPool.length,
       positionCounts,
       attempts,
       lastFailureReason,
-      samplePlayers: playerPool.slice(0, 5).map((p) => ({
-        name: p.name,
-        position: p.position,
-        salary: p.salary,
-        projection: p.projection,
-      })),
     },
     lineups: generatedLineups.map((lineup, index) => ({
       rank: index + 1,
@@ -496,7 +292,7 @@ export async function GET(request: Request) {
       salaryCap: SALARY_CAP,
       salaryRemaining: SALARY_CAP - lineup.totalSalary,
       players: lineup.players.map((p) => ({
-        id: p.id,
+        dkPlayerId: p.dkPlayerId,
         name: p.name,
         position: p.position,
         team: p.team,

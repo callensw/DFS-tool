@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface LineupPlayer {
-  id: number;
+  dkPlayerId: number;
   name: string;
   position: string;
   team: string;
@@ -21,19 +21,81 @@ interface Lineup {
   players: LineupPlayer[];
 }
 
+interface Slate {
+  id: number;
+  draftGroupId: number;
+  name: string;
+  gameCount: number;
+  startTime: string;
+  startTimeSuffix: string;
+  playerCount: number;
+}
+
 const ROSTER_SLOT_ORDER = ["PG", "SG", "SF", "PF", "C", "G", "F", "UTIL"];
 
 export default function OptimizerPage() {
-  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const [slates, setSlates] = useState<Slate[]>([]);
+  const [selectedSlateId, setSelectedSlateId] = useState<number | null>(null);
   const [lineupCount, setLineupCount] = useState(20);
   const [lineups, setLineups] = useState<Lineup[]>([]);
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [loadingSlates, setLoadingSlates] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [selectedLineups, setSelectedLineups] = useState<Set<number>>(
     new Set()
   );
 
+  // Fetch available slates on mount
+  useEffect(() => {
+    fetchSlates();
+  }, []);
+
+  async function fetchSlates() {
+    setLoadingSlates(true);
+    try {
+      const response = await fetch("/api/slates");
+      const data = await response.json();
+      if (data.success) {
+        setSlates(data.slates);
+        // Auto-select first slate if available
+        if (data.slates.length > 0 && !selectedSlateId) {
+          setSelectedSlateId(data.slates[0].id);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch slates:", err);
+    }
+    setLoadingSlates(false);
+  }
+
+  async function syncDKSalaries() {
+    setSyncing(true);
+    setSyncMessage(null);
+    setError(null);
+    try {
+      const response = await fetch("/api/sync/dk-salaries");
+      const data = await response.json();
+      if (data.success) {
+        setSyncMessage(`Synced ${data.slatesProcessed} slates, ${data.playersProcessed} players`);
+        // Refresh slates after sync
+        await fetchSlates();
+      } else {
+        setError(data.error || "Failed to sync DK salaries");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sync failed");
+    }
+    setSyncing(false);
+  }
+
   async function generateLineups() {
+    if (!selectedSlateId) {
+      setError("Please select a slate first");
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setLineups([]);
@@ -41,7 +103,7 @@ export default function OptimizerPage() {
 
     try {
       const response = await fetch(
-        `/api/optimizer/generate?date=${date}&count=${lineupCount}`
+        `/api/optimizer/generate?slateId=${selectedSlateId}&count=${lineupCount}`
       );
       const data = await response.json();
 
@@ -94,7 +156,7 @@ export default function OptimizerPage() {
       );
 
       // Format as "Name (ID)" for each position
-      return sortedPlayers.map((p) => `${p.name} (${p.id})`);
+      return sortedPlayers.map((p) => `${p.name} (${p.dkPlayerId})`);
     });
 
     const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
@@ -104,7 +166,9 @@ export default function OptimizerPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `dk_lineups_${date}.csv`;
+    const selectedSlate = slates.find(s => s.id === selectedSlateId);
+    const slateName = selectedSlate ? selectedSlate.name.replace(/\s+/g, "_") : "lineups";
+    a.download = `dk_${slateName}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -127,15 +191,52 @@ export default function OptimizerPage() {
       {/* Controls */}
       <div className="bg-gray-900 rounded-xl p-6 border border-gray-800">
         <div className="flex flex-wrap items-end gap-6">
-          {/* Date Input */}
+          {/* Sync DK Salaries Button */}
           <div>
-            <label className="block text-sm text-gray-400 mb-2">Date</label>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
-            />
+            <label className="block text-sm text-gray-400 mb-2">DraftKings Data</label>
+            <button
+              onClick={syncDKSalaries}
+              disabled={syncing}
+              className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-orange-800 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+            >
+              {syncing ? (
+                <>
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Syncing...
+                </>
+              ) : (
+                "Sync DK Salaries"
+              )}
+            </button>
+          </div>
+
+          {/* Slate Selector */}
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">Select Slate</label>
+            <select
+              value={selectedSlateId || ""}
+              onChange={(e) => setSelectedSlateId(e.target.value ? Number(e.target.value) : null)}
+              disabled={loadingSlates || slates.length === 0}
+              className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-blue-500 min-w-[250px]"
+            >
+              {loadingSlates ? (
+                <option value="">Loading slates...</option>
+              ) : slates.length === 0 ? (
+                <option value="">No slates available - Sync DK first</option>
+              ) : (
+                <>
+                  <option value="">Select a slate...</option>
+                  {slates.map((slate) => (
+                    <option key={slate.id} value={slate.id}>
+                      {slate.name} ({slate.gameCount} games, {slate.playerCount} players)
+                    </option>
+                  ))}
+                </>
+              )}
+            </select>
           </div>
 
           {/* Lineup Count */}
@@ -201,6 +302,12 @@ export default function OptimizerPage() {
         {error && (
           <div className="mt-4 p-4 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400">
             {error}
+          </div>
+        )}
+
+        {syncMessage && (
+          <div className="mt-4 p-4 bg-green-500/20 border border-green-500/50 rounded-lg text-green-400">
+            {syncMessage}
           </div>
         )}
       </div>
@@ -293,7 +400,7 @@ export default function OptimizerPage() {
                   </thead>
                   <tbody>
                     {exposureStats.slice(0, 20).map((stat) => (
-                      <tr key={stat.id}>
+                      <tr key={stat.dkPlayerId}>
                         <td className="font-medium text-white">{stat.name}</td>
                         <td>
                           <span className="badge badge-blue">{stat.team}</span>
@@ -336,8 +443,11 @@ export default function OptimizerPage() {
             Ready to Optimize
           </h2>
           <p className="text-gray-400 max-w-md mx-auto">
-            Select a date and number of lineups, then click Generate to create
-            optimal DraftKings lineups based on your projections.
+            {slates.length === 0 ? (
+              <>Click &quot;Sync DK Salaries&quot; to fetch available slates from DraftKings, then select a slate and generate lineups.</>
+            ) : (
+              <>Select a slate and number of lineups, then click Generate to create optimal DraftKings lineups.</>
+            )}
           </p>
         </div>
       )}
@@ -497,11 +607,11 @@ function calculateExposure(lineups: Lineup[]) {
 
   for (const lineup of lineups) {
     for (const player of lineup.players) {
-      const existing = playerCounts.get(player.id);
+      const existing = playerCounts.get(player.dkPlayerId);
       if (existing) {
         existing.count++;
       } else {
-        playerCounts.set(player.id, {
+        playerCounts.set(player.dkPlayerId, {
           name: player.name,
           team: player.team,
           salary: player.salary,
@@ -512,8 +622,8 @@ function calculateExposure(lineups: Lineup[]) {
     }
   }
 
-  const stats = Array.from(playerCounts.entries()).map(([id, data]) => ({
-    id,
+  const stats = Array.from(playerCounts.entries()).map(([dkPlayerId, data]) => ({
+    dkPlayerId,
     ...data,
     exposure: (data.count / lineups.length) * 100,
   }));
