@@ -75,6 +75,9 @@ function addVariance(projection: number, variance: number): number {
   return projection * multiplier;
 }
 
+// Track why lineups fail for debugging
+let lastFailureReason = "";
+
 // Generate a single lineup using greedy algorithm
 function generateLineup(
   playerPool: PlayerPool[],
@@ -138,12 +141,9 @@ function generateLineup(
     }
 
     if (!bestPlayer) {
-      // Try again with less strict criteria for flex positions
-      if (slot === "UTIL") {
-        // If we can't fill UTIL, lineup failed
-        return null;
-      }
-      continue;
+      // ALL slots must be filled - if we can't fill any slot, lineup fails
+      lastFailureReason = `Could not fill ${slot} slot. Remaining salary: $${remainingSalary}. Lineup size: ${lineup.length}`;
+      return null;
     }
 
     // Add player to lineup
@@ -460,6 +460,7 @@ export async function GET(request: Request) {
       playerPoolSize: playerPool.length,
       positionCounts,
       attempts,
+      lastFailureReason,
       samplePlayers: playerPool.slice(0, 5).map((p) => ({
         name: p.name,
         position: p.position,
