@@ -339,11 +339,49 @@ export async function GET(request: Request) {
 
   console.log(`[OPTIMIZER] Player pool size: ${playerPool.length}`);
 
+  // Count players by position capability
+  const positionCounts = {
+    guards: playerPool.filter((p) => canFillSlot(p.position, "G")).length,
+    forwards: playerPool.filter((p) => canFillSlot(p.position, "F")).length,
+    centers: playerPool.filter((p) => canFillSlot(p.position, "C")).length,
+    rawPositions: {} as Record<string, number>,
+  };
+  playerPool.forEach((p) => {
+    positionCounts.rawPositions[p.position] = (positionCounts.rawPositions[p.position] || 0) + 1;
+  });
+
   if (playerPool.length < ROSTER_SIZE) {
     return NextResponse.json({
       success: false,
       error: `Not enough players in pool (need ${ROSTER_SIZE}, have ${playerPool.length})`,
       lineups: [],
+      debug: { playerPoolSize: playerPool.length, positionCounts },
+    });
+  }
+
+  // Check if we have enough for each position
+  if (positionCounts.guards < 3) {
+    return NextResponse.json({
+      success: false,
+      error: `Not enough guards (need 3, have ${positionCounts.guards})`,
+      lineups: [],
+      debug: { playerPoolSize: playerPool.length, positionCounts },
+    });
+  }
+  if (positionCounts.forwards < 3) {
+    return NextResponse.json({
+      success: false,
+      error: `Not enough forwards (need 3, have ${positionCounts.forwards})`,
+      lineups: [],
+      debug: { playerPoolSize: playerPool.length, positionCounts },
+    });
+  }
+  if (positionCounts.centers < 1) {
+    return NextResponse.json({
+      success: false,
+      error: `Not enough centers (need 1, have ${positionCounts.centers})`,
+      lineups: [],
+      debug: { playerPoolSize: playerPool.length, positionCounts },
     });
   }
 
@@ -414,6 +452,17 @@ export async function GET(request: Request) {
     success: true,
     date: targetDate,
     count: generatedLineups.length,
+    debug: {
+      playerPoolSize: playerPool.length,
+      positionCounts,
+      attempts,
+      samplePlayers: playerPool.slice(0, 5).map((p) => ({
+        name: p.name,
+        position: p.position,
+        salary: p.salary,
+        projection: p.projection,
+      })),
+    },
     lineups: generatedLineups.map((lineup, index) => ({
       rank: index + 1,
       totalSalary: lineup.totalSalary,
