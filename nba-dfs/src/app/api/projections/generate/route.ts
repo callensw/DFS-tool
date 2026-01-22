@@ -155,11 +155,13 @@ export async function GET(request: Request) {
   // 4. Fetch season averages from API for these players (batch in groups of 25)
   const playerIds = players.map((p) => p.id);
   const seasonAveragesMap = new Map<number, SeasonAverage>();
+  const debugInfo: { batch: number; playerCount: number; avgCount: number; error?: string; samplePlayerIds?: number[] }[] = [];
 
   // Process in batches to avoid URL length limits
   const batchSize = 25;
   for (let i = 0; i < playerIds.length; i += batchSize) {
     const batchIds = playerIds.slice(i, i + batchSize);
+    const batchNum = Math.floor(i / batchSize) + 1;
 
     const result = await fetchFromBallDontLie<SeasonAveragesResponse>(
       "/v1/season_averages",
@@ -169,13 +171,30 @@ export async function GET(request: Request) {
       }
     );
 
+    const batchDebug: typeof debugInfo[0] = {
+      batch: batchNum,
+      playerCount: batchIds.length,
+      avgCount: result.data?.data?.length || 0,
+    };
+
+    if (result.error) {
+      batchDebug.error = result.error;
+    }
+
+    // Include sample player IDs for first batch for debugging
+    if (batchNum === 1) {
+      batchDebug.samplePlayerIds = batchIds.slice(0, 5);
+    }
+
+    debugInfo.push(batchDebug);
+
     if (result.data?.data) {
       result.data.data.forEach((avg) => {
         seasonAveragesMap.set(avg.player_id, avg);
       });
     }
 
-    console.log(`[PROJECTIONS] Fetched season averages batch ${Math.floor(i / batchSize) + 1}, got ${result.data?.data?.length || 0} averages`);
+    console.log(`[PROJECTIONS] Batch ${batchNum}: requested ${batchIds.length}, got ${result.data?.data?.length || 0}, error: ${result.error || 'none'}`);
   }
 
   console.log(`[PROJECTIONS] Total season averages: ${seasonAveragesMap.size}`);
@@ -240,10 +259,15 @@ export async function GET(request: Request) {
       success: true,
       count: 0,
       date: targetDate,
+      season,
       players_checked: players.length,
       players_with_stats: playersWithStats,
       players_without_stats: playersWithoutStats,
       message: "No projections generated - players have no season averages",
+      debug: {
+        batches: debugInfo,
+        total_averages_found: seasonAveragesMap.size,
+      },
     });
   }
 
