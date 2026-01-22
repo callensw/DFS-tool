@@ -23,7 +23,7 @@
       "schedule": "0 */2 * * *"
     },
     {
-      "path": "/api/salaries/generate-mock",
+      "path": "/api/salaries/generate",
       "schedule": "5 */2 * * *"
     }
   ]
