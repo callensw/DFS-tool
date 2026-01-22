@@ -62,7 +62,7 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const targetDate = searchParams.get("date") || getTodayDateString();
-  const season = searchParams.get("season") || "2025";
+  const season = searchParams.get("season") || "2026";
 
   const supabase = createAdminClient();
 

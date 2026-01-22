@@ -54,7 +54,7 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const playerIds = searchParams.get("player_ids")?.split(",").filter(Boolean) || [];
-  const season = searchParams.get("season") || "2024";
+  const season = searchParams.get("season") || "2026";
 
   if (playerIds.length === 0) {
     return NextResponse.json({
