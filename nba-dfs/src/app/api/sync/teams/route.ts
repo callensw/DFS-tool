@@ -6,6 +6,8 @@ import {
   ApiTeam,
 } from "@/lib/balldontlie";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   console.log("[SYNC/TEAMS] Starting teams sync...");
 

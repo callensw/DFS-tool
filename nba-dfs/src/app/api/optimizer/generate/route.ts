@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-admin";
 import { getTodayDateString } from "@/lib/balldontlie";
 
+export const dynamic = "force-dynamic";
+
 const SALARY_CAP = 50000;
 const ROSTER_SIZE = 8;
 const MAX_PLAYERS_PER_GAME = 4;

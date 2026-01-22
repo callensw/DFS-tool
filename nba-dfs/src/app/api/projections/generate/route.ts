@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-admin";
 import { getTodayDateString } from "@/lib/balldontlie";
 
+export const dynamic = "force-dynamic";
+
 interface PlayerStats {
   player_id: number;
   game_id: number;

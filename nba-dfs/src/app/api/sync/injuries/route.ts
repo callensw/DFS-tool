@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-admin";
 import { fetchAllPages, ApiInjury } from "@/lib/balldontlie";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   console.log("[SYNC/INJURIES] Starting injuries sync...");
 

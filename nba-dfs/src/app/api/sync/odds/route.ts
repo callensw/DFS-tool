@@ -7,6 +7,8 @@ import {
   getTodayDateString,
 } from "@/lib/balldontlie";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request) {
   console.log("[SYNC/ODDS] Starting odds sync...");
 

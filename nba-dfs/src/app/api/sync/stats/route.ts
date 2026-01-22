@@ -5,6 +5,8 @@ import {
   ApiStats,
 } from "@/lib/balldontlie";
 
+export const dynamic = "force-dynamic";
+
 /**
  * Calculate DraftKings fantasy points
  * PTS=1, REB=1.25, AST=1.5, STL=2, BLK=2, TOV=-0.5, 3PM=0.5
