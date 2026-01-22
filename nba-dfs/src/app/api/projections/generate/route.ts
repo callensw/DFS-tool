@@ -62,7 +62,7 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const targetDate = searchParams.get("date") || getTodayDateString();
-  const season = searchParams.get("season") || "2026";
+  const season = searchParams.get("season") || "2025";
 
   const supabase = createAdminClient();
 
@@ -152,52 +152,43 @@ export async function GET(request: Request) {
     }
   });
 
-  // 4. Fetch season averages from API for these players (batch in groups of 25)
+  // 4. Fetch season averages from API for these players
+  // Note: API uses player_id (singular), so we need individual requests
+  // Process in parallel batches to stay within timeout limits
   const playerIds = players.map((p) => p.id);
   const seasonAveragesMap = new Map<number, SeasonAverage>();
-  const debugInfo: { batch: number; playerCount: number; avgCount: number; error?: string; samplePlayerIds?: number[] }[] = [];
 
-  // Process in batches to avoid URL length limits
-  const batchSize = 25;
-  for (let i = 0; i < playerIds.length; i += batchSize) {
-    const batchIds = playerIds.slice(i, i + batchSize);
-    const batchNum = Math.floor(i / batchSize) + 1;
+  // Fetch in parallel batches of 10 to avoid rate limits and timeouts
+  const parallelBatchSize = 10;
+  let successCount = 0;
+  let errorCount = 0;
 
-    const result = await fetchFromBallDontLie<SeasonAveragesResponse>(
-      "/v1/season_averages",
-      {
-        season,
-        player_ids: batchIds.join(","),
-      }
+  for (let i = 0; i < playerIds.length; i += parallelBatchSize) {
+    const batchIds = playerIds.slice(i, i + parallelBatchSize);
+
+    const results = await Promise.all(
+      batchIds.map((playerId) =>
+        fetchFromBallDontLie<SeasonAveragesResponse>("/v1/season_averages", {
+          season,
+          player_id: String(playerId),
+        })
+      )
     );
 
-    const batchDebug: typeof debugInfo[0] = {
-      batch: batchNum,
-      playerCount: batchIds.length,
-      avgCount: result.data?.data?.length || 0,
-    };
-
-    if (result.error) {
-      batchDebug.error = result.error;
-    }
-
-    // Include sample player IDs for first batch for debugging
-    if (batchNum === 1) {
-      batchDebug.samplePlayerIds = batchIds.slice(0, 5);
-    }
-
-    debugInfo.push(batchDebug);
-
-    if (result.data?.data) {
-      result.data.data.forEach((avg) => {
+    results.forEach((result) => {
+      if (result.data?.data?.[0]) {
+        const avg = result.data.data[0];
         seasonAveragesMap.set(avg.player_id, avg);
-      });
-    }
+        successCount++;
+      } else if (result.error) {
+        errorCount++;
+      }
+    });
 
-    console.log(`[PROJECTIONS] Batch ${batchNum}: requested ${batchIds.length}, got ${result.data?.data?.length || 0}, error: ${result.error || 'none'}`);
+    console.log(`[PROJECTIONS] Batch ${Math.floor(i / parallelBatchSize) + 1}: processed ${batchIds.length} players`);
   }
 
-  console.log(`[PROJECTIONS] Total season averages: ${seasonAveragesMap.size}`);
+  console.log(`[PROJECTIONS] Total season averages: ${seasonAveragesMap.size} (${successCount} success, ${errorCount} errors)`);
 
   // 5. Generate projections for each player using season averages
   const projections: Array<{
@@ -265,8 +256,8 @@ export async function GET(request: Request) {
       players_without_stats: playersWithoutStats,
       message: "No projections generated - players have no season averages",
       debug: {
-        batches: debugInfo,
         total_averages_found: seasonAveragesMap.size,
+        sample_player_ids: playerIds.slice(0, 5),
       },
     });
   }
