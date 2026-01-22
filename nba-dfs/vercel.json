@@ -1,0 +1,25 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/sync/teams",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/sync/games",
+      "schedule": "0 */4 * * *"
+    },
+    {
+      "path": "/api/sync/injuries",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/sync/odds",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/projections/generate",
+      "schedule": "0 */2 * * *"
+    }
+  ]
+}
