@@ -170,7 +170,7 @@ export async function GET() {
         // Debug: Log first player object to see actual structure
         if (Array.isArray(players) && players.length > 0) {
           console.log(`[DK-SYNC] First player object sample:`, JSON.stringify(players[0], null, 2).slice(0, 1000));
-          debugEntry.samplePlayer = players[0] as Record<string, unknown>;
+          debugEntry.samplePlayer = players[0] as unknown as Record<string, unknown>;
         }
         debugEntry.playerCount = Array.isArray(players) ? players.length : 0;
         results.debug.push(debugEntry);
@@ -212,7 +212,7 @@ export async function GET() {
 
         // 5. Upsert player salaries
         // Debug: Check player data structure - API might use different field names
-        const firstPlayer = players[0] as Record<string, unknown>;
+        const firstPlayer = players[0] as unknown as Record<string, unknown>;
         const playerKeys = Object.keys(firstPlayer);
         console.log(`[DK-SYNC] Player object keys: ${playerKeys.join(', ')}`);
 
