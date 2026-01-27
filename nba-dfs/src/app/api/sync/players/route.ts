@@ -69,7 +69,7 @@ export async function GET() {
     for (let i = 0; i < playersToUpsert.length; i += batchSize) {
       const batch = playersToUpsert.slice(i, i + batchSize);
       const { data, error } = await supabase
-        .from("players")
+        .from("dfs_players")
         .upsert(batch, { onConflict: "id" })
         .select();
 

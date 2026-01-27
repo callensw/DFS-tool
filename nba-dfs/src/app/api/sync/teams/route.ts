@@ -50,7 +50,7 @@ export async function GET() {
     // Upsert to Supabase
     const supabase = createAdminClient();
     const { data, error } = await supabase
-      .from("teams")
+      .from("dfs_teams")
       .upsert(teamsToUpsert, { onConflict: "id" })
       .select();
 

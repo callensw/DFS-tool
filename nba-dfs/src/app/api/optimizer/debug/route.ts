@@ -12,13 +12,13 @@ export async function GET(request: Request) {
 
   // 1. Check games
   const { data: games, error: gamesError } = await supabase
-    .from("games")
+    .from("dfs_games")
     .select("id, date, home_team_id, visitor_team_id")
     .eq("date", targetDate);
 
   // 2. Get all game dates to see what's in the DB
   const { data: allGameDates } = await supabase
-    .from("games")
+    .from("dfs_games")
     .select("date")
     .order("date", { ascending: false })
     .limit(20);
@@ -26,21 +26,21 @@ export async function GET(request: Request) {
   // 3. Check projections
   const gameIds = games?.map((g) => g.id) || [];
   const { data: projections, error: projError } = await supabase
-    .from("projections")
+    .from("dfs_projections")
     .select("id, player_id, game_id, dk_proj")
     .in("game_id", gameIds.length > 0 ? gameIds : [0]);
 
   // 4. Check players with positions
   const playerIds = projections?.map((p) => p.player_id) || [];
   const { data: players, error: playersError } = await supabase
-    .from("players")
+    .from("dfs_players")
     .select("id, first_name, last_name, position")
     .in("id", playerIds.length > 0 ? playerIds : [0])
     .limit(20);
 
   // 5. Check salaries
   const { data: salaries } = await supabase
-    .from("dk_salaries")
+    .from("dfs_dk_salaries")
     .select("*")
     .limit(10);
 

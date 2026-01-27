@@ -15,7 +15,7 @@ export async function GET(request: Request) {
 
   // Get slates, optionally filtering to only upcoming ones
   let query = supabase
-    .from("dk_slates")
+    .from("dfs_dk_slates")
     .select("*")
     .eq("sport", "NBA")
     .order("start_time", { ascending: true });
@@ -39,7 +39,7 @@ export async function GET(request: Request) {
   const slatesWithCounts = await Promise.all(
     (slates || []).map(async (slate) => {
       const { count } = await supabase
-        .from("dk_salaries")
+        .from("dfs_dk_salaries")
         .select("*", { count: "exact", head: true })
         .eq("slate_id", slate.id);
 

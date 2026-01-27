@@ -27,7 +27,7 @@ export async function GET(request: Request) {
 
   // 1. Get games for the target date
   const { data: games, error: gamesError } = await supabase
-    .from("games")
+    .from("dfs_games")
     .select("id")
     .eq("date", targetDate);
 
@@ -52,7 +52,7 @@ export async function GET(request: Request) {
 
   // 2. Get projections for these games
   const { data: projections, error: projError } = await supabase
-    .from("projections")
+    .from("dfs_projections")
     .select("player_id, dk_proj, game_id")
     .in("game_id", gameIds);
 
@@ -77,7 +77,7 @@ export async function GET(request: Request) {
   // 3. Get player info for positions
   const playerIds = projections.map((p) => p.player_id);
   const { data: players, error: playersError } = await supabase
-    .from("players")
+    .from("dfs_players")
     .select("id, first_name, last_name, position")
     .in("id", playerIds);
 
@@ -108,7 +108,7 @@ export async function GET(request: Request) {
 
   // 5. Upsert to dk_salaries table
   const { error: upsertError } = await supabase
-    .from("dk_salaries")
+    .from("dfs_dk_salaries")
     .upsert(salaries, {
       onConflict: "player_id,game_id",
       ignoreDuplicates: false,

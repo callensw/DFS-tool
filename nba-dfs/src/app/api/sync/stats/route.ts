@@ -134,7 +134,7 @@ export async function GET(request: Request) {
   const supabase = createAdminClient();
 
   const { error: upsertError } = await supabase
-    .from("player_game_stats")
+    .from("dfs_player_game_stats")
     .upsert(dbStats, {
       onConflict: "player_id,game_id",
       ignoreDuplicates: false,

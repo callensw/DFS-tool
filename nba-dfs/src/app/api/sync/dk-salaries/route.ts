@@ -198,7 +198,7 @@ export async function GET() {
         };
 
         const { data: slate, error: slateError } = await supabase
-          .from("dk_slates")
+          .from("dfs_dk_slates")
           .upsert(slateData, {
             onConflict: "dk_draft_group_id",
           })
@@ -248,10 +248,10 @@ export async function GET() {
 
         if (salaryRecords.length > 0) {
           // Delete old salaries for this slate first
-          await supabase.from("dk_salaries").delete().eq("slate_id", slate.id);
+          await supabase.from("dfs_dk_salaries").delete().eq("slate_id", slate.id);
 
           // Insert new salaries
-          const { error: salaryError } = await supabase.from("dk_salaries").insert(salaryRecords);
+          const { error: salaryError } = await supabase.from("dfs_dk_salaries").insert(salaryRecords);
 
           if (salaryError) {
             results.errors.push(`Failed to insert salaries for slate ${slate.id}: ${salaryError.message}`);

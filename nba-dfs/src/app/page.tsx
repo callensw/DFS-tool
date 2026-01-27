@@ -51,21 +51,21 @@ export default function Dashboard() {
       const [gamesRes, injuriesRes, projectionsRes, playersRes, teamsRes] =
         await Promise.all([
           supabase
-            .from("games")
+            .from("dfs_games")
             .select("id", { count: "exact", head: true })
             .eq("date", today),
           supabase
-            .from("injuries")
+            .from("dfs_injuries")
             .select("id", { count: "exact", head: true })
             .eq("is_active", true),
           supabase
-            .from("projections")
+            .from("dfs_projections")
             .select("id", { count: "exact", head: true }),
           supabase
-            .from("players")
+            .from("dfs_players")
             .select("id", { count: "exact", head: true })
             .eq("is_active", true),
-          supabase.from("teams").select("id", { count: "exact", head: true }),
+          supabase.from("dfs_teams").select("id", { count: "exact", head: true }),
         ]);
 
       setStats({

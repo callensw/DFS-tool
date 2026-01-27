@@ -68,7 +68,7 @@ export async function GET(request: Request) {
 
   // 1. Get today's games
   const { data: games, error: gamesError } = await supabase
-    .from("games")
+    .from("dfs_games")
     .select("id, home_team_id, visitor_team_id")
     .eq("date", targetDate);
 
@@ -264,7 +264,7 @@ export async function GET(request: Request) {
 
   // 6. Upsert projections to database
   const { error: upsertError } = await supabase
-    .from("projections")
+    .from("dfs_projections")
     .upsert(projections, {
       onConflict: "player_id,game_id",
       ignoreDuplicates: false,

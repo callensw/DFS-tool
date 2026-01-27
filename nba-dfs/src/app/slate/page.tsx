@@ -90,11 +90,11 @@ export default function SlatePage() {
       // Fetch all required data in parallel
       const [teamsRes, gamesRes, projectionsRes, playersRes, salariesRes] =
         await Promise.all([
-          supabase.from("teams").select("*"),
-          supabase.from("games").select("*").eq("date", today),
-          supabase.from("projections").select("*"),
-          supabase.from("players").select("*").eq("is_active", true),
-          supabase.from("dk_salaries").select("*"),
+          supabase.from("dfs_teams").select("*"),
+          supabase.from("dfs_games").select("*").eq("date", today),
+          supabase.from("dfs_projections").select("*"),
+          supabase.from("dfs_players").select("*").eq("is_active", true),
+          supabase.from("dfs_dk_salaries").select("*"),
         ]);
 
       const teamsData = (teamsRes.data || []) as Team[];

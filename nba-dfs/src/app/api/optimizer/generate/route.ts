@@ -166,7 +166,7 @@ export async function GET(request: Request) {
 
   // 1. Get slate info
   const { data: slate, error: slateError } = await supabase
-    .from("dk_slates")
+    .from("dfs_dk_slates")
     .select("*")
     .eq("id", slateId)
     .single();
@@ -183,7 +183,7 @@ export async function GET(request: Request) {
 
   // 2. Get DK salaries for this slate
   const { data: salaries, error: salariesError } = await supabase
-    .from("dk_salaries")
+    .from("dfs_dk_salaries")
     .select("*")
     .eq("slate_id", slateId);
 

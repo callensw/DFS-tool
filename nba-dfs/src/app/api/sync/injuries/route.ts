@@ -44,7 +44,7 @@ export async function GET() {
 
     // First, mark all existing injuries as inactive
     const { error: updateError } = await supabase
-      .from("injuries")
+      .from("dfs_injuries")
       .update({ is_active: false })
       .eq("is_active", true);
 
@@ -77,14 +77,14 @@ export async function GET() {
 
     // Delete existing active injuries for these players
     await supabase
-      .from("injuries")
+      .from("dfs_injuries")
       .delete()
       .in("player_id", playerIds)
       .eq("is_active", true);
 
     // Insert new injury records
     const { data, error } = await supabase
-      .from("injuries")
+      .from("dfs_injuries")
       .insert(injuriesToUpsert)
       .select();
 

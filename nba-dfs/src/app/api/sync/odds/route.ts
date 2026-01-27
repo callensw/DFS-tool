@@ -132,7 +132,7 @@ export async function GET(request: Request) {
     // Insert to Supabase (not upsert - we want history)
     const supabase = createAdminClient();
     const { data, error } = await supabase
-      .from("game_odds")
+      .from("dfs_game_odds")
       .insert(oddsToInsert)
       .select();
 

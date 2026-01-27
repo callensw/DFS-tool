@@ -73,9 +73,9 @@ export default function InjuriesPage() {
 
     try {
       const [injuriesRes, playersRes, teamsRes] = await Promise.all([
-        supabase.from("injuries").select("*").eq("is_active", true),
-        supabase.from("players").select("*"),
-        supabase.from("teams").select("*"),
+        supabase.from("dfs_injuries").select("*").eq("is_active", true),
+        supabase.from("dfs_players").select("*"),
+        supabase.from("dfs_teams").select("*"),
       ]);
 
       const injuriesData = (injuriesRes.data || []) as Injury[];
